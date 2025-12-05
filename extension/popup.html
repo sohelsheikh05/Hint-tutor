@@ -1,0 +1,27 @@
+<!-- Copy content from canvas: popup.html -->
+ <!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>HintTutor</title>
+<style>
+body { font-family: Arial, sans-serif; width: 360px; margin: 8px; }
+#question { font-size: 12px; color: #333; margin-bottom: 8px; white-space: pre-wrap; }
+#hint { background: #f6f8fa; padding: 8px; border-radius: 6px; min-height: 60px; }
+#answer { width: 100%; margin-top: 8px; }
+button { margin-top: 8px; padding: 8px 12px; }
+</style>
+</head>
+<body>
+<div><strong>Selected question:</strong></div>
+<div id="question">No selection yet. Highlight text and use context menu.</div>
+<div><strong>Hint:</strong></div>
+<div id="hint">—</div>
+<textarea id="answer" rows="3" placeholder="Type your attempt / answer here..."></textarea>
+<div>
+<button id="nextHint">Next hint</button>
+<button id="getSolution">Give full solution</button>
+</div>
+<script src="popup.js"></script>
+</body>
+</html>
