@@ -1,27 +1,229 @@
-<!-- Copy content from canvas: popup.html -->
- <!doctype html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <title>HintTutor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-body { font-family: Arial, sans-serif; width: 360px; margin: 8px; }
-#question { font-size: 12px; color: #333; margin-bottom: 8px; white-space: pre-wrap; }
-#hint { background: #f6f8fa; padding: 8px; border-radius: 6px; min-height: 60px; }
-#answer { width: 100%; margin-top: 8px; }
-button { margin-top: 8px; padding: 8px 12px; }
+  :root {
+    --bg-color: #0f172a;
+    --card-bg: #1e293b;
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --accent: #3b82f6;
+    --accent-hover: #2563eb;
+    --border: #334155;
+    --radius: 12px;
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    width: 380px;
+    background-color: var(--bg-color);
+    color: var(--text-primary);
+    padding: 16px;
+    margin: 0;
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+
+  .header-icon {
+    width: 28px;
+    height: 28px;
+    background: linear-gradient(135deg, #60a5fa, #3b82f6);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 16px;
+    color: white;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+  }
+
+  .header-title {
+    font-size: 18px;
+    font-weight: 600;
+    background: linear-gradient(135deg, #e0f2fe, #7dd3fc);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.01em;
+  }
+
+  .section {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin-bottom: 16px;
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+  }
+
+  .section-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  #question {
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  #hint {
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: #bae6fd;
+    background: rgba(56, 189, 248, 0.08);
+    padding: 12px;
+    border-left: 3px solid #38bdf8;
+    border-radius: 4px 8px 8px 4px;
+    min-height: 48px;
+    word-break: break-word;
+  }
+
+  .input-area {
+    margin-bottom: 16px;
+  }
+
+  textarea {
+    width: 100%;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    border-radius: var(--radius);
+    padding: 12px;
+    font-family: inherit;
+    font-size: 13.5px;
+    line-height: 1.5;
+    resize: none;
+    outline: none;
+    transition: all 0.2s;
+  }
+
+  textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+  }
+
+  textarea::placeholder {
+    color: var(--text-secondary);
+  }
+
+  .actions {
+    display: flex;
+    gap: 12px;
+  }
+
+  button {
+    flex: 1;
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-weight: 500;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  button:hover {
+    background: var(--accent-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.2);
+  }
+
+  button:active {
+    transform: translateY(0);
+  }
+
+  #getSolution {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+  }
+
+  #getSolution:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--text-secondary);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  }
+  
+  /* Icon styles embedded for buttons */
+  .btn-icon {
+    width: 14px;
+    height: 14px;
+    fill: currentColor;
+  }
 </style>
 </head>
 <body>
-<div><strong>Selected question:</strong></div>
-<div id="question">No selection yet. Highlight text and use context menu.</div>
-<div><strong>Hint:</strong></div>
-<div id="hint">—</div>
-<textarea id="answer" rows="3" placeholder="Type your attempt / answer here..."></textarea>
-<div>
-<button id="nextHint">Next hint</button>
-<button id="getSolution">Give full solution</button>
-</div>
-<script src="popup.js"></script>
+
+  <div class="header">
+    <div class="header-icon">H</div>
+    <div class="header-title">HintTutor</div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+      Selected Question
+    </div>
+    <div id="question">No selection yet. Highlight text and right-click &rarr; Ask HintTutor.</div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path><circle cx="12" cy="12" r="4"></circle></svg>
+      Hint
+    </div>
+    <div id="hint">&mdash;</div>
+  </div>
+
+  <div class="input-area">
+    <textarea id="answer" rows="3" placeholder="Type your attempt or answer here..."></textarea>
+  </div>
+
+  <div class="actions">
+    <button id="nextHint">
+      <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+      Next hint
+    </button>
+    <button id="getSolution">
+      <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h20"></path><path d="M12 2v20"></path></svg>
+      Give full solution
+    </button>
+  </div>
+
+  <script src="popup.js"></script>
 </body>
 </html>

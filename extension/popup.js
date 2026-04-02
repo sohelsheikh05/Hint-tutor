@@ -1,5 +1,4 @@
-const API_BASE = "http://localhost:3000"; // or your deployed backend
-
+const API_BASE = "http://localhost:3000"; 
 function getStorage(keys) {
   return new Promise((resolve) => {
     chrome.storage.local.get(keys, (result) => resolve(result));
@@ -31,31 +30,9 @@ async function init() {
 
   questionEl.innerText = lastSelection;
 
-  // If no session yet -> start a new one
-  if (!hintSessionId) {
-    await startNewSession(lastSelection, hintEl);
-    return;
-  }
 
-  // Try to resume existing session
-  try {
-    const res = await fetch(`${API_BASE}/session/${hintSessionId}`);
-
-    if (res.ok) {
-      const json = await res.json();
-      hintEl.innerText = json.lastHint || "—";
-    } else if (res.status === 404) {
-      // Session missing on server -> start a fresh one
-      console.log("Session not found on server, starting new session");
-      await setStorage({ hintSessionId: null });
-      await startNewSession(lastSelection, hintEl);
-    } else {
-      hintEl.innerText = "Error resuming session";
-    }
-  } catch (e) {
-    console.error(e);
-    hintEl.innerText = "Cannot reach backend. Is server running?";
-  }
+  await setStorage({ hintSessionId: null }); 
+  await startNewSession(lastSelection, hintEl);
 }
 
 async function startNewSession(lastSelection, hintEl) {
@@ -83,5 +60,82 @@ async function startNewSession(lastSelection, hintEl) {
   }
 }
 
-// keep the rest of your code (nextHint + getSolution handlers) the same
+
+document.getElementById("nextHint")?.addEventListener("click", async () => {
+  const { hintSessionId } = await getStorage(["hintSessionId"]);
+  const answerEl = document.getElementById("answer");
+  const hintEl = document.getElementById("hint");
+  const btn = document.getElementById("nextHint");
+  
+  if (!hintSessionId) {
+    hintEl.innerText = "No active session. Please select some text and run the extension again.";
+    return;
+  }
+  
+ 
+  const userAttempt = answerEl.value.trim();
+  
+  btn.classList.add("is-loading");
+  hintEl.innerText = "Thinking...";
+  
+  try {
+    const res = await fetch(`${API_BASE}/session/${hintSessionId}/next`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userAttempt }),
+    });
+
+    if (res.ok) {
+      const json = await res.json();
+      hintEl.innerText = json.hint || "—";
+      
+      answerEl.value = ""; 
+      
+      if (json.done) {
+        hintEl.innerText += "\n\n(Tutor says you are all done!)";
+      }
+    } else {
+      hintEl.innerText = "Error getting next hint from the server.";
+    }
+  } catch (e) {
+    console.error(e);
+    hintEl.innerText = "Cannot reach backend server.";
+  } finally {
+    btn.classList.remove("is-loading");
+  }
+});
+
+document.getElementById("getSolution")?.addEventListener("click", async () => {
+  const { hintSessionId } = await getStorage(["hintSessionId"]);
+  const hintEl = document.getElementById("hint");
+  const btn = document.getElementById("getSolution");
+  
+  if (!hintSessionId) {
+    hintEl.innerText = "No active session.";
+    return;
+  }
+  
+  btn.classList.add("is-loading");
+  hintEl.innerText = "Generating full detailed solution...";
+  
+  try {
+    
+    const res = await fetch(`${API_BASE}/session/${hintSessionId}/solution`);
+
+    if (res.ok) {
+      const json = await res.json();
+      hintEl.innerText = json.solution || "—";
+      
+    } else {
+      hintEl.innerText = "Error getting full solution from the server.";
+    }
+  } catch (e) {
+    console.error(e);
+    hintEl.innerText = "Cannot reach backend server.";
+  } finally {
+    btn.classList.remove("is-loading");
+  }
+});
+
+
 init();

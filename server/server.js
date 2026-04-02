@@ -1,226 +1,266 @@
-// Copy content from canvas: server.js
 import express from "express";
-import fetch from "node-fetch";
 import { v4 as uuidv4 } from "uuid";
 import dotenv from "dotenv";
+import { OpenRouter } from "@openrouter/sdk";
+import cors from "cors";
 
 dotenv.config();
 
 const app = express();
+
+
+app.use(cors());
 app.use(express.json());
 
-// In-memory session store (for dev/demo). For production, swap with Redis.
-const SESSIONS = new Map();
-
-// Config from .env
-const LLM_API_URL = process.env.LLM_API_URL || "https://api.openai.com/v1/chat/completions";
-const LLM_API_KEY = process.env.LLM_API_KEY;
-const MODEL = process.env.MODEL || "gpt-4o-mini";
 const PORT = process.env.PORT || 3000;
+const MODEL = process.env.MODEL || "openai/gpt-4o-mini";
 
-if (!LLM_API_KEY) {
-  console.warn("[HintTutor] WARNING: LLM_API_KEY is not set. Set it in server/.env");
+
+
+
+if (!process.env.OPENROUTER_API_KEY) {
+  console.error(" OPENROUTER_API_KEY missing in .env");
+  process.exit(1);
 }
 
-/**
- * Call the LLM (OpenAI-style chat endpoint).
- * Adjust this if you use a different provider.
- */
-async function callLLM(messages, maxTokens = 256, temperature = 0.7) {
-  const res = await fetch(LLM_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${LLM_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      messages,
-      max_tokens: maxTokens,
-      temperature,
-    }),
-  });
 
-  if (!res.ok) {
-    const txt = await res.text();
-    console.error("[HintTutor] LLM error:", res.status, txt);
-    throw new Error(`LLM error: ${res.status} ${txt}`);
-  }
 
-  const json = await res.json();
-  const content = json?.choices?.[0]?.message?.content;
-  if (!content) {
-    throw new Error("LLM returned no content");
+
+const SESSIONS = new Map();
+const MAX_CONTEXT_MESSAGES = 10; 
+
+
+function pruneHistory(history) {
+  if (history.length > MAX_CONTEXT_MESSAGES + 2) {
+    
+    return [
+      history[0], 
+      history[1], 
+      ...history.slice(-MAX_CONTEXT_MESSAGES)
+    ];
   }
-  return content;
+  return history;
 }
 
-/**
- * POST /start
- * Body: { question: string }
- *
- * Starts a new hint session for the given question.
- * Returns: { sessionId, hint }
- */
+
+async function callLLM(messages, session, maxTokens = 300) {
+  const prunedMessages = pruneHistory(messages);
+  
+  try {
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        "HTTP-Referer": "http://localhost:3000",
+        "X-OpenRouter-Title": "HintTutor",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: prunedMessages,
+        temperature: 0.7,
+        max_tokens: maxTokens
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("OpenRouter API Error:", response.status, errorText);
+      throw new Error(`OpenRouter API failed with status ${response.status}`);
+    }
+
+    const completion = await response.json();
+    
+  
+    if (!completion.choices || completion.choices.length === 0) {
+      throw new Error("Invalid response format from OpenRouter.");
+    }
+
+    const content = completion.choices[0].message.content;
+    const usage = completion.usage || { total_tokens: 0 };
+    
+ 
+    if (session) {
+      session.tokensUsed += usage.total_tokens || 0;
+    }
+
+    return { content, usage };
+  } catch (error) {
+    console.error("LLM API Call Error:", error);
+    throw new Error("Failed to fetch response from language model.");
+  }
+}
+
+
 app.post("/start", async (req, res) => {
   try {
-    const { question } = req.body || {};
+    const { question } = req.body;
+
     if (!question || typeof question !== "string") {
-      return res.status(400).json({ error: "Missing or invalid 'question' in body" });
+      return res.status(400).json({ error: "A valid question string is required." });
     }
 
     const sessionId = uuidv4();
-
     const systemPrompt = `
-You are HintTutor, a step-by-step tutor.
-The user wants to solve the problem themselves, and only wants one hint at a time.
-RULES:
-- Provide exactly ONE short, focused hint now.
-- Do NOT give the full solution.
-- Prefer a Socratic style (ask guiding questions).
-- Keep the hint to 1–3 sentences.
+You are HintTutor.
+
+Rules:
+- Give exactly ONE hint
+- Do NOT give the full solution
+- Ask guiding questions
+- Keep hints short (1-3 sentences)
 `;
 
     const messages = [
-      { role: "system", content: systemPrompt.trim() },
-      {
-        role: "user",
-        content: `Problem:\n${question}\n\nThe user wants to start hint-by-hint mode. Give the first hint only.`,
-      },
+      { role: "system", content: systemPrompt },
+      { role: "user", content: `Problem:\n${question}` }
     ];
 
-    const firstHint = await callLLM(messages, 200);
-
-    // Store session
-    SESSIONS.set(sessionId, {
+    
+    const sessionRecord = {
+      id: sessionId,
       question,
-      history: [...messages, { role: "assistant", content: firstHint }],
+      history: messages,
       hintIndex: 1,
+      tokensUsed: 0,
+      createdAt: Date.now(),
+      lastActive: Date.now()
+    };
+    SESSIONS.set(sessionId, sessionRecord);
+
+    const { content: firstHint, usage } = await callLLM(messages, sessionRecord, 300);
+
+    sessionRecord.history.push({ role: "assistant", content: firstHint });
+
+    res.json({
+      sessionId,
+      hint: firstHint,
+      tokensUsed: sessionRecord.tokensUsed,
+      recentUsage: usage
     });
 
-    return res.json({ sessionId, hint: firstHint });
   } catch (err) {
-    console.error("[HintTutor] /start error:", err);
-    return res.status(500).json({ error: "Internal server error" });
+    console.error("Start Session Error:", err.message);
+    res.status(500).json({ error: "Server error setting up the session." });
   }
 });
 
-/**
- * POST /session/:id/next
- * Body: { userAttempt: string }
- *
- * Sends user's attempt + history to the LLM and gets the next hint.
- * Returns: { hint, done }
- */
+
 app.post("/session/:id/next", async (req, res) => {
   try {
-    const sessionId = req.params.id;
-    const { userAttempt } = req.body || {};
+   
+    const session = SESSIONS.get(req.params.id);
 
-    const session = SESSIONS.get(sessionId);
     if (!session) {
-      return res.status(404).json({ error: "Session not found" });
+      return res.status(404).json({ error: "Session not found or expired." });
+    }
+    
+    session.lastActive = Date.now();
+    const { userAttempt } = req.body;
+
+    if (userAttempt) {
+      session.history.push({
+        role: "user",
+        content: `User attempt:\n${userAttempt}`
+      });
     }
 
-    // Append user's attempt to history
-    session.history.push({
-      role: "user",
-      content: `User attempt / reasoning:\n${userAttempt || "(no text)"}\n\nRespond with the next hint.`,
+    const { content: hint, usage } = await callLLM(session.history, session, 300);
+    
+    session.history.push({ role: "assistant", content: hint });
+    session.hintIndex++;
+
+    const done = hint.toLowerCase().includes("done") || session.hintIndex > 10;
+
+    res.json({
+      hint,
+      done,
+      tokensUsed: session.tokensUsed,
+      recentUsage: usage
     });
 
-    const systemPrompt = `
-You are HintTutor.
-The user is trying to solve the problem step by step.
-RULES:
-- Analyze the user's latest attempt.
-- If they are partially correct, acknowledge briefly and push them gently to the next step.
-- If they are off track, nudge them back without revealing the full solution.
-- Provide EXACTLY ONE short, clear hint (1–3 sentences).
-- Do NOT dump the full solution.
-- If the user has clearly solved the problem completely, respond with "DONE" plus a very short confirmation.
-`;
-
-    const messages = [{ role: "system", content: systemPrompt.trim() }, ...session.history];
-
-    const hint = await callLLM(messages, 250);
-
-    session.history.push({ role: "assistant", content: hint });
-    session.hintIndex += 1;
-
-    // Simple heuristic: if model says DONE or too many hints, mark done
-    const done =
-      hint.toLowerCase().includes("done") ||
-      session.hintIndex > 12; // safety cap – you can tune this
-
-    SESSIONS.set(sessionId, session);
-
-    return res.json({ hint, done });
   } catch (err) {
-    console.error("[HintTutor] /session/:id/next error:", err);
-    return res.status(500).json({ error: "Internal server error" });
+    console.error("Next Hint Error:", err.message);
+    res.status(500).json({ error: "Server error while fetching the next hint." });
   }
 });
 
-/**
- * GET /session/:id/solution
- *
- * Asks the LLM for a full solution based on the conversation so far.
- * Returns: { solution }
- */
+
 app.get("/session/:id/solution", async (req, res) => {
   try {
-    const sessionId = req.params.id;
-    const session = SESSIONS.get(sessionId);
+    const session = SESSIONS.get(req.params.id);
+
     if (!session) {
-      return res.status(404).json({ error: "Session not found" });
+      return res.status(404).json({ error: "Session not found or expired." });
+    }
+    
+    session.lastActive = Date.now();
+
+   
+    if (session.history.length > 0 && session.history[0].role === "system") {
+      session.history[0].content = `You are an expert technical tutor. 
+The user has requested the full solution and you MUST provide it. 
+From this point forward, ignore the previous rule about "only providing hints". 
+You are now permitted to provide complete code solutions, translations (e.g. Java, Python), and direct answers.`;
     }
 
-    const systemPrompt = `
-You are HintTutor.
-The user has now asked for the full solution to the problem.
-Provide:
-- a clear explanation of the reasoning
-- if appropriate, clean and correct code
-- keep it concise but complete
-No need to hide any steps now.
-`;
+    session.history.push({ 
+      role: "user", 
+      content: "I am completely stuck. Please provide the full, clear solution to the problem." 
+    });
 
-    const messages = [{ role: "system", content: systemPrompt.trim() }, ...session.history];
+    
+    const { content: solution, usage } = await callLLM(session.history, session, 1500);
 
-    const solution = await callLLM(messages, 1024);
+    
+    session.history.push({
+      role: "assistant",
+      content: solution
+    });
+    session.hintIndex++;
 
-    // Optionally delete session when done
-    SESSIONS.delete(sessionId);
+    res.json({ 
+      solution, 
+      finalTokensUsed: session.tokensUsed,
+      recentUsage: usage 
+    });
 
-    return res.json({ solution });
   } catch (err) {
-    console.error("[HintTutor] /session/:id/solution error:", err);
-    return res.status(500).json({ error: "Internal server error" });
+    console.error("Solution Retrieval Error:", err.message);
+    res.status(500).json({ error: "Server error retrieving the full solution." });
   }
 });
 
-/**
- * GET /session/:id
- *
- * Debug/info endpoint: returns the question and last hint for a session.
- * Returns: { question, lastHint }
- */
+
 app.get("/session/:id", (req, res) => {
-  const sessionId = req.params.id;
-  const session = SESSIONS.get(sessionId);
+  const session = SESSIONS.get(req.params.id);
+
   if (!session) {
-    return res.status(404).json({ error: "Session not found" });
+    return res.status(404).json({ error: "Session not found." });
   }
 
-  const lastMsg = session.history[session.history.length - 1];
-  return res.json({
+  const assistantMsgs = session.history.filter(m => m.role === "assistant");
+  const lastHint = assistantMsgs.length > 0 ? assistantMsgs[assistantMsgs.length - 1].content : null;
+
+  res.json({
     question: session.question,
-    lastHint: lastMsg?.content || null,
+    lastHint,
+    hintCount: session.hintIndex,
+    tokensUsed: session.tokensUsed
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`HintTutor mediator running on http://localhost:${PORT}`);
-});
 
-//nioasfkkqw
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, session] of SESSIONS.entries()) {
+    if (now - session.lastActive > 1000 * 60 * 60) { 
+      SESSIONS.delete(id);
+    }
+  }
+}, 1000 * 60 * 60);
+
+app.listen(PORT, () => {
+  console.log(` HintTutor running on http://localhost:${PORT}`);
+ 
+});
